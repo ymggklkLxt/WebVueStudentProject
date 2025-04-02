@@ -2,30 +2,30 @@
     <div class="user">
         <el-card shadow="hover" class="search-card">
             <div class="search-group">
+                <!-- 搜索框和操作按钮 -->
                 <el-select v-model="selectedField" placeholder="选择字段" clearable class="field-select">
-                    <el-option v-for="item in fields" :key="item.value" :label="item.label"
-                        :value="item.value"></el-option>
+                    <el-option v-for="item in fields" :key="item.value" :label="item.label" :value="item.value"></el-option>
                 </el-select>
                 <el-input v-model="searchQuery" placeholder="请输入搜索内容" class="search-box" clearable
                     @keyup.enter.native="handleSearch">
                     <el-button slot="append" icon="el-icon-search" @click="handleSearch"></el-button>
                 </el-input>
-                <el-button type="success" icon="el-icon-plus" @click="openAddDialog"
-                    class="action-button">添加</el-button>
-                <el-button type="primary" icon="el-icon-upload2" @click="importData"
-                    class="action-button">导入</el-button>
-                <el-button type="warning" icon="el-icon-download" @click="exportData"
-                    class="action-button">导出</el-button>
+                <el-button type="success" icon="el-icon-plus" @click="openAddDialog" class="action-button">添加</el-button>
+                <el-button type="primary" icon="el-icon-upload2" @click="importData" class="action-button">导入</el-button>
+                <el-button type="warning" icon="el-icon-download" @click="exportData" class="action-button">导出</el-button>
             </div>
         </el-card>
 
         <el-card shadow="hover" class="table-card">
             <div class="table-header">
+                <!-- 表格标题和记录统计 -->
                 <span class="table-title">商品列表</span>
                 <el-tag type="info">共 {{ totalFiltered }} 条记录</el-tag>
             </div>
-            <el-table ref="table" :data="paginatedProducts" height=tableHeight stripe border highlight-current-row
+            <!-- 商品列表表格 -->
+            <el-table ref="table" :data="paginatedProducts" height="tableHeight" stripe border highlight-current-row
                 style="width: 100%" v-loading="loading" @sort-change="handleSortChange" :resizable="true">
+                <!-- 商品字段列 -->
                 <el-table-column prop="id" label="商品ID" width="100" sortable></el-table-column>
                 <el-table-column prop="name" label="商品名称" width="220" sortable></el-table-column>
                 <el-table-column prop="features" label="商品特性" width="260"></el-table-column>
@@ -33,6 +33,7 @@
                 <el-table-column prop="type" label="商品类型" width="120"></el-table-column>
                 <el-table-column prop="supplier" label="供应商" width="150" sortable></el-table-column>
                 <el-table-column prop="createdAt" label="创建日期" width="180" sortable></el-table-column>
+                <!-- 操作列 -->
                 <el-table-column label="操作" width="180" fixed="right" align="center" header-align="center">
                     <template slot-scope="scope">
                         <el-button size="mini" type="primary" @click="editProduct(scope.row)">修改</el-button>
@@ -40,6 +41,7 @@
                     </template>
                 </el-table-column>
             </el-table>
+            <!-- 分页和返回顶部按钮 -->
             <div class="table-footer">
                 <el-button type="primary" plain size="mini" @click="scrollToTop" class="back-to-top">
                     <i class="el-icon-top"></i> 返回顶部
@@ -53,6 +55,7 @@
         <!-- 修改商品信息弹框 -->
         <el-dialog title="修改商品信息" :visible.sync="editDialogVisible" width="650px" center>
             <el-form :model="editForm" label-width="80px">
+                <!-- 表单内容 -->
                 <el-row :gutter="20">
                     <el-col :span="12">
                         <el-form-item label="商品ID">
@@ -106,6 +109,7 @@
         <!-- 添加商品信息弹框 -->
         <el-dialog title="添加商品信息" :visible.sync="addDialogVisible" width="650px" modal-append-to-body>
             <el-form :model="addForm" label-width="80px">
+                <!-- 表单内容 -->
                 <el-row :gutter="20">
                     <el-col :span="12">
                         <el-form-item label="商品ID">

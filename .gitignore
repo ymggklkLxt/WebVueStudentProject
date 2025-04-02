@@ -24,3 +24,5 @@ pnpm-debug.log*
 *.sw?
 jsconfig.json
 yarn.lock
+yarn.lock
+yarn.lock
