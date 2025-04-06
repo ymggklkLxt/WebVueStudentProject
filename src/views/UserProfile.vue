@@ -1,4 +1,16 @@
 <template>
+    <!--
+        @Template_Desc 用户个人中心页面
+        包含用户信息展示、活动记录、修改密码、编辑个人档案等功能
+        @Element_Desc .user-profile 页面最外层容器
+        @Element_Desc .profile-card 用户信息卡片
+        @Element_Desc .activity-card 用户活动记录卡片
+        @Element_Desc .avatar-section 用户头像区域
+        @Element_Desc .info-section 用户信息区域
+        @Element_Desc .action-buttons 操作按钮区域
+        @Element_Desc .activity-table 活动记录表格
+        @Element_Desc el-dialog 修改密码、编辑个人档案、编辑单个字段的弹窗
+    -->
     <div class="user-profile">
         <!-- 用户信息卡片 - 优化后的布局 -->
         <el-card shadow="hover" class="profile-card">
@@ -100,6 +112,7 @@
                 <el-tabs v-model="activeTab" @tab-click="handleTabChange" class="compact-tabs">
                     <el-tab-pane label="登录历史" name="login"></el-tab-pane>
                     <el-tab-pane label="操作记录" name="operations"></el-tab-pane>
+                    <el-tab-pane label="授权仓库" name="warehouses"></el-tab-pane>
                 </el-tabs>
             </div>
             <div class="activity-table">
@@ -127,12 +140,24 @@
                     </el-table-column>
                     <el-table-column v-if="activeTab === 'operations'" prop="warehouse" label="相关仓库" width="150">
                     </el-table-column>
+                    <el-table-column v-if="activeTab === 'warehouses'" prop="name" label="仓库名称" width="180">
+                    </el-table-column>
+                    <el-table-column v-if="activeTab === 'warehouses'" prop="location" label="仓库位置">
+                    </el-table-column>
+                    <el-table-column v-if="activeTab === 'warehouses'" label="授权状态" width="120">
+                        <template slot-scope="{row}">
+                            <el-tag type="success" size="small" effect="light">
+                                已授权
+                            </el-tag>
+                        </template>
+                    </el-table-column>
                 </el-table>
             </div>
         </el-card>
 
         <!-- 修改密码对话框 -->
-        <el-dialog title="修改密码" :visible.sync="passwordDialogVisible" width="500px">
+        <el-dialog title="修改密码" :visible.sync="passwordDialogVisible" width="500px" 
+                   class="modern-dialog" top="25vh">
             <el-form :model="passwordForm" :rules="passwordRules" ref="passwordForm" label-width="100px">
                 <el-form-item label="原密码" prop="oldPassword">
                     <el-input type="password" v-model="passwordForm.oldPassword" autocomplete="off"></el-input>
@@ -151,7 +176,8 @@
         </el-dialog>
 
         <!-- 编辑个人档案对话框 -->
-        <el-dialog title="编辑个人档案" :visible.sync="profileDialogVisible" width="600px">
+        <el-dialog title="编辑个人档案" :visible.sync="profileDialogVisible" width="600px" 
+                   class="modern-dialog" top="20vh">
             <el-form :model="profileForm" label-width="100px">
                 <el-row :gutter="20">
                     <el-col :span="12">
@@ -197,7 +223,8 @@
         </el-dialog>
 
         <!-- 编辑单个字段对话框 -->
-        <el-dialog :title="'编辑' + fieldLabels[editFieldName]" :visible.sync="fieldDialogVisible" width="400px">
+        <el-dialog :title="'编辑' + fieldLabels[editFieldName]" :visible.sync="fieldDialogVisible" width="400px"
+                   class="modern-dialog" top="25vh">
             <el-form :model="fieldForm" label-width="80px">
                 <el-form-item :label="fieldLabels[editFieldName]">
                     <el-input v-model="fieldForm.value"></el-input>
@@ -217,6 +244,14 @@ import { format } from 'date-fns'
 export default {
     name: 'UserProfile',
     data() {
+        /**
+         * @Function_Para 密码确认验证函数
+         *   @param {Object} rule - 验证规则对象
+         *   @param {string} value - 输入的确认密码值
+         *   @param {Function} callback - 验证回调函数
+         * @Function_Meth 验证确认密码是否与新密码一致
+         * @Function_API 无外部API调用
+         */
         const validatePassword = (rule, value, callback) => {
             if (value !== this.passwordForm.newPassword) {
                 callback(new Error('两次输入的密码不一致'))
@@ -248,11 +283,6 @@ export default {
                 value: ''
             },
             editFieldName: '',
-            fieldLabels: {
-                name: '姓名',
-                email: '邮箱',
-                department: '部门'
-            },
             passwordRules: {
                 oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
                 newPassword: [
@@ -273,19 +303,41 @@ export default {
             }
         }
     },
+    
+    /**
+     * @Function_Para 组件创建生命周期钩子
+     * @Function_Meth 初始化组件:
+     *   1. 检查路由参数，确定是否查看他人主页
+     *   2. 初始化IndexedDB
+     *   3. 加载用户信息和活动数据
+     *   4. 清理旧头像数据
+     * @Function_API
+     *   - Vue Router: 获取路由参数
+     *   - localStorage: 获取用户数据
+     *   - IndexedDB: 初始化数据库
+     */
     async created() {
-        // 检查路由参数中是否有userId
+        // 检查路由参数中是否有 userId
         this.targetUserId = this.$route.query.userId;
-        this.isViewingOtherUser = !!this.targetUserId;
+        const currentUser = JSON.parse(localStorage.getItem('user')) || {};
+        this.isViewingOtherUser = this.targetUserId && this.targetUserId !== currentUser.id;
 
-        await this.initAvatarDB() // 确保数据库初始化完成
-        await this.loadUserInfo() // 再加载用户信息
-        this.loadActivityData()
-        this.cleanupOldAvatars()
+        await this.initAvatarDB(); // 确保数据库初始化完成
+        await this.loadUserInfo(); // 再加载用户信息
+        this.loadActivityData();
+        this.cleanupOldAvatars();
     },
 
     methods: {
-        // 初始化头像专用数据库
+        /**
+         * @Function_Para 初始化头像数据库
+         *   无参数
+         * @Function_Meth 创建和初始化用于存储用户头像的IndexedDB数据库
+         * @Function_API
+         *   - IndexedDB API: 创建/打开数据库和对象存储
+         *   - Promise API: 提供异步处理能力
+         * @Function_Caller 被组件created生命周期调用
+         */
         initAvatarDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open('AvatarDB', 1)
@@ -309,7 +361,15 @@ export default {
             })
         },
 
-        // 保存头像到IndexedDB
+        /**
+         * @Function_Para 保存头像到数据库
+         *   @param {string} userId - 用户ID
+         *   @param {string} avatarData - Base64编码的头像数据
+         * @Function_Meth 将头像数据保存到IndexedDB
+         * @Function_API
+         *   - IndexedDB API: 事务处理和数据存储
+         * @Function_Caller 被handleAvatarChange方法调用
+         */
         async saveAvatarToDB(userId, avatarData) {
             if (!this.db) return false
 
@@ -324,7 +384,14 @@ export default {
             })
         },
 
-        // 从IndexedDB读取头像
+        /**
+         * @Function_Para 从数据库读取头像
+         *   @param {string} userId - 用户ID
+         * @Function_Meth 从IndexedDB检索指定用户的头像数据
+         * @Function_API
+         *   - IndexedDB API: 事务处理和数据读取
+         * @Function_Caller 被loadUserInfo方法调用
+         */
         async getAvatarFromDB(userId) {
             if (!this.db) return null
 
@@ -339,7 +406,21 @@ export default {
             })
         },
 
-        // 修改后的头像上传方法
+        /**
+         * @Function_Para 处理头像上传变更
+         *   @param {Object} file - 文件对象
+         *   Template引用: el-upload组件的:on-change事件
+         * @Function_Meth 处理用户头像更新:
+         *   1. 读取选择的图片文件
+         *   2. 转换为Base64编码
+         *   3. 保存到IndexedDB
+         *   4. 更新界面显示和通知其他组件
+         * @Function_API
+         *   - FileReader API: 读取文件内容
+         *   - IndexedDB API: 保存头像数据
+         *   - Vue事件总线: 通知头像更新
+         * @Function_Caller 被头像上传组件的:on-change事件调用
+         */
         async handleAvatarChange(file) {
             const reader = new FileReader()
             reader.onload = async (e) => {
@@ -354,7 +435,7 @@ export default {
                         // 立即验证存储结果
                         const storedData = await this.getAvatarFromDB(this.userInfo.id)
                         console.log('读取已存储的头像:', storedData?.slice(0, 50) + '...')
-                        this.$eventBus.$emit('avatar-updated', avatarData) // 触发事件
+                        this.$eventBus.$emit(`avatar-updated-${this.userInfo.id}`, avatarData) // 触发事件
                         this.userInfo.avatar = avatarData
                         this.profileForm.avatar = avatarData
                     }
@@ -364,6 +445,20 @@ export default {
             }
             reader.readAsDataURL(file.raw)
         },
+
+        /**
+         * @Function_Para 加载用户信息
+         *   无参数
+         * @Function_Meth 获取并组装用户信息:
+         *   1. 从localStorage获取基本信息
+         *   2. 根据查看模式(自己/他人)获取相应用户数据
+         *   3. 从IndexedDB加载用户头像
+         * @Function_API
+         *   - localStorage API: 读取用户数据
+         *   - IndexedDB API: 读取头像数据
+         *   - Vue Router: 处理路由重定向
+         * @Function_Caller 被组件created生命周期和路由监听器调用
+         */
         async loadUserInfo() {
             // 1. 从localStorage加载当前用户基本信息
             const currentUserData = JSON.parse(localStorage.getItem('user')) || {};
@@ -408,6 +503,19 @@ export default {
             this.profileForm.avatar = require('@/assets/default-avatar.svg');
         },
 
+        /**
+         * @Function_Para 更新用户资料
+         *   无参数，通过this.profileForm获取表单数据
+         *   Template引用: 编辑个人档案对话框的保存按钮点击事件
+         * @Function_Meth 保存用户资料更新:
+         *   1. 验证权限(自己的资料或管理员)
+         *   2. 更新localStorage中的用户数据
+         *   3. 如果是当前用户，同步更新当前登录会话信息
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         *   - Element UI Message: 显示操作结果
+         * @Function_Caller 被编辑个人档案对话框的保存按钮调用
+         */
         updateProfile() {
             if (this.isViewingOtherUser && !this.isAdmin()) {
                 this.$message.warning('您没有权限修改其他用户信息');
@@ -447,11 +555,28 @@ export default {
             this.profileDialogVisible = false;
         },
 
+        /**
+         * @Function_Para 检查当前用户是否管理员
+         *   无参数
+         * @Function_Meth 验证当前登录用户是否为管理员角色
+         * @Function_API
+         *   - localStorage API: 读取用户角色信息
+         */
         isAdmin() {
             const currentUser = JSON.parse(localStorage.getItem('user')) || {};
             return currentUser.role === 'admin';
         },
 
+        /**
+         * @Function_Para 格式化时间
+         *   多态函数，可接受:
+         *   1. 单参数形式: formatTime(timestamp)
+         *   2. 表格列格式化器形式: formatTime(row, column, cellValue)
+         *   Template引用: el-table-column的:formatter属性
+         * @Function_Meth 统一格式化日期时间显示
+         * @Function_API
+         *   - date-fns format: 格式化日期
+         */
         formatTime(row, column, cellValue) {
             // 处理直接调用的情况（如 formatTime(userInfo.lastLogin)）
             if (arguments.length === 1) {
@@ -475,6 +600,16 @@ export default {
             }
         },
 
+        /**
+         * @Function_Para 加载活动数据
+         *   无参数
+         * @Function_Meth 根据当前选择的标签页加载对应的活动数据:
+         *   - 登录历史
+         *   - 操作记录
+         *   - 授权仓库
+         * @Function_API
+         *   - localStorage API: 读取各类活动数据
+         */
         loadActivityData() {
             this.loading = true;
             // 预先设置空数据避免表格高度变化
@@ -493,9 +628,11 @@ export default {
                             ...item,
                             timestamp: item.timestamp instanceof Date ? item.timestamp : new Date(item.timestamp)
                         }));
-                } else {
+                } else if (this.activeTab === 'operations') {
                     const operations = JSON.parse(localStorage.getItem('operations')) || [];
-                    const userOperations = operations.filter(op => op.operator === this.userInfo.username);
+                    // 修改这里：使用 applicant 字段而不是 operator 字段
+                    const userOperations = operations.filter(op => 
+                        op.applicant === this.userInfo.username || op.operator === this.userInfo.username); // 兼容旧数据
 
                     this.activityData = userOperations
                         .map(op => ({
@@ -505,6 +642,18 @@ export default {
                             warehouse: op.sourceWarehouse || op.targetWarehouse || 'N/A'
                         }))
                         .slice(0, 20);
+                } else if (this.activeTab === 'warehouses') {
+                    // 只加载用户已授权的仓库
+                    const allWarehouses = JSON.parse(localStorage.getItem('warehouses')) || [];
+                    const authorizedIds = this.userInfo.authorizedWarehouses || [];
+
+                    // 只显示已授权的仓库
+                    this.activityData = allWarehouses.filter(warehouse =>
+                        authorizedIds.includes(warehouse.id)
+                    ).map(warehouse => ({
+                        ...warehouse,
+                        status: '已授权' // 添加状态字段
+                    }));
                 }
 
                 this.loading = false;
@@ -519,7 +668,13 @@ export default {
             }, 500); // 缩短加载时间
         },
 
-        // 添加设备信息格式化方法
+        /**
+         * @Function_Para 获取设备信息
+         *   无参数
+         * @Function_Meth 分析用户代理字符串识别用户设备类型
+         * @Function_API
+         *   - navigator.userAgent: 获取浏览器用户代理信息
+         */
         getDeviceInfo() {
             const ua = navigator.userAgent;
             if (ua.match(/Android/i)) return 'Android';
@@ -529,20 +684,49 @@ export default {
             if (ua.match(/Linux/i)) return 'Linux';
             return 'Unknown Device';
         },
+
+        /**
+         * @Function_Para 处理标签页切换
+         *   无参数
+         *   Template引用: el-tabs的@tab-click事件
+         * @Function_Meth 切换活动标签页时重新加载对应数据
+         * @Function_API 无外部API调用
+         */
         handleTabChange() {
             this.loadActivityData()
         },
 
+        /**
+         * @Function_Para 获取角色标签类型
+         *   @param {string} role - 用户角色
+         *   Template引用: 个人信息卡片中的el-tag的:type属性
+         * @Function_Meth 根据用户角色返回对应的标签样式类型
+         * @Function_API 无外部API调用
+         */
         getRoleTagType(role) {
             return role === 'admin' ? 'danger' :
                 role === 'manager' ? 'warning' : 'success'
         },
 
+        /**
+         * @Function_Para 格式化角色显示
+         *   @param {string} role - 用户角色
+         *   Template引用: 个人信息卡片中的角色显示
+         * @Function_Meth 将英文角色名转换为中文显示
+         * @Function_API 无外部API调用
+         */
         formatRole(role) {
             return role === 'admin' ? '管理员' :
                 role === 'manager' ? '经理' : '操作员'
         },
 
+        /**
+         * @Function_Para 获取操作类型标签样式
+         *   @param {string} type - 操作类型
+         *   Template引用: 操作记录表格中的操作类型标签
+         * @Function_Meth 根据操作类型返回对应的标签样式
+         * @Function_API 无外部API调用
+         */
         getOperationTagType(type) {
             const typeMap = {
                 '入库': 'success',
@@ -552,6 +736,15 @@ export default {
             return typeMap[type] || 'info'
         },
 
+        /**
+         * @Function_Para 显示密码修改对话框
+         *   无参数
+         *   Template引用: "修改密码"按钮的点击事件
+         * @Function_Meth 初始化并显示密码修改对话框
+         * @Function_API
+         *   - Vue Refs: 访问表单实例清除验证
+         * @Function_Caller 被"修改密码"按钮点击事件调用
+         */
         showPasswordDialog() {
             this.passwordForm = {
                 oldPassword: '',
@@ -564,16 +757,40 @@ export default {
             })
         },
 
+        /**
+         * @Function_Para 显示个人资料编辑对话框
+         *   无参数
+         *   Template引用: "编辑完整档案"按钮的点击事件
+         * @Function_Meth 显示编辑个人档案的对话框
+         * @Function_API 无外部API调用
+         * @Function_Caller 被"编辑完整档案"按钮点击事件调用
+         */
         showProfileDialog() {
             this.profileDialogVisible = true
         },
 
+        /**
+         * @Function_Para 编辑单个字段
+         *   @param {string} field - 要编辑的字段名
+         *   Template引用: 各信息项的编辑按钮
+         * @Function_Meth 初始化并显示单字段编辑对话框
+         * @Function_API 无外部API调用
+         * @Function_Caller 被各信息项的编辑按钮点击事件调用
+         */
         editField(field) {
             this.editFieldName = field
             this.fieldForm.value = this.userInfo[field] || ''
             this.fieldDialogVisible = true
         },
 
+        /**
+         * @Function_Para 保存编辑的字段
+         *   无参数
+         *   Template引用: 字段编辑对话框的保存按钮
+         * @Function_Meth 保存单个字段的编辑并更新用户资料
+         * @Function_API 无外部API调用
+         * @Function_Caller 被字段编辑对话框的保存按钮调用
+         */
         saveField() {
             this.userInfo[this.editFieldName] = this.fieldForm.value
             this.profileForm[this.editFieldName] = this.fieldForm.value
@@ -581,6 +798,19 @@ export default {
             this.fieldDialogVisible = false
         },
 
+        /**
+         * @Function_Para 更新密码
+         *   无参数
+         *   Template引用: 密码修改对话框的确定按钮
+         * @Function_Meth 验证并更新用户密码:
+         *   1. 验证表单数据
+         *   2. 验证原密码是否正确
+         *   3. 更新密码并保存
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         *   - Element UI Message: 显示操作结果
+         * @Function_Caller 被密码修改对话框的确定按钮调用
+         */
         updatePassword() {
             this.$refs.passwordForm.validate(valid => {
                 if (valid) {
@@ -609,6 +839,14 @@ export default {
             })
         },
 
+        /**
+         * @Function_Para 清理旧头像数据
+         *   无参数
+         * @Function_Meth 从localStorage中移除旧的头像数据,
+         *   迁移到IndexedDB后的清理工作
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         */
         async cleanupOldAvatars() {
             // 从localStorage移除头像
             const user = JSON.parse(localStorage.getItem('user')) || {}
@@ -627,23 +865,45 @@ export default {
                 localStorage.setItem('users', JSON.stringify(updatedUsers))
             }
         },
-        // 简单的密码哈希函数（与系统其他部分一致）
+
+        /**
+         * @Function_Para 密码哈希处理
+         *   @param {string} password - 原始密码
+         * @Function_Meth 执行简单的密码哈希处理
+         * @Function_API 仅使用JavaScript字符串操作
+         */
         hashPassword(password) {
             return password.split('').reverse().join('') + password.length
         }
     },
+    
+    /**
+     * @Function_Para 监听路由变化
+     * @Function_Meth 当路由参数变化时更新页面内容:
+     *   1. 更新目标用户ID
+     *   2. 重新判断是否查看他人主页
+     *   3. 重新加载用户信息
+     * @Function_API
+     *   - Vue Router: 监听路由变化
+     *   - localStorage: 获取当前用户信息
+     */
     watch: {
         // 监听路由变化
         '$route'(to) {
             this.targetUserId = to.query.userId;
-            this.isViewingOtherUser = !!this.targetUserId;
+            const currentUser = JSON.parse(localStorage.getItem('user')) || {};
+            this.isViewingOtherUser = this.targetUserId && this.targetUserId !== currentUser.id;
             this.loadUserInfo();
         }
     }
 }
 </script>
 <style scoped>
-/* 穿透到 el-avatar 内部的 img */
+/* 头像图片样式 */
+/* 
+  @Style_Desc 头像图片的显示样式及阴影效果
+  @Selector ::v-deep .avatar img 用户头像图片元素
+*/
 ::v-deep .avatar img {
     margin-bottom: 16px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
@@ -653,6 +913,11 @@ export default {
     object-position: center !important;
 }
 
+/* 用户个人中心主容器样式 */
+/* 
+  @Style_Desc 用户个人中心页面最外层容器样式，定义内边距和最大宽度
+  @Selector .user-profile 页面最外层容器
+*/
 .user-profile {
     padding: 20px;
     max-width: 1200px;
@@ -660,6 +925,10 @@ export default {
 }
 
 /* 卡片样式优化 */
+/* 
+  @Style_Desc 个人信息卡片和活动记录卡片的共同样式
+  @Selector .profile-card, .activity-card 个人信息和活动记录卡片
+*/
 .profile-card,
 .activity-card {
     border-radius: 12px;
@@ -669,9 +938,13 @@ export default {
     border: none;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     transition: all 0.3s ease;
-
 }
 
+/* 卡片悬浮效果 */
+/* 
+  @Style_Desc 卡片悬浮时的动画效果
+  @Selector .profile-card:hover, .activity-card:hover 卡片悬浮状态
+*/
 .profile-card:hover,
 .activity-card:hover {
     box-shadow: 0 16px 20px rgba(0, 0, 0, 0.12);
@@ -679,13 +952,22 @@ export default {
     transform: translateX(-1px);
 }
 
-/* 头部样式优化 */
+/* 卡片头部样式 */
+/* 
+  @Style_Desc 个人信息和活动记录卡片的头部样式
+  @Selector .profile-header, .activity-header 卡片头部容器
+*/
 .profile-header,
 .activity-header {
     padding: 1px 24px;
     padding-bottom: 6px;
 }
 
+/* 卡片标题样式 */
+/* 
+  @Style_Desc 卡片标题的文本样式
+  @Selector .profile-header h2, .activity-header h3 卡片标题元素
+*/
 .profile-header h2,
 .activity-header h3 {
     margin: 0;
@@ -694,13 +976,22 @@ export default {
     font-size: 18px;
 }
 
-/* 内容区域优化 */
+/* 个人信息内容区域样式 */
+/* 
+  @Style_Desc 个人信息卡片的内容布局，使用弹性盒
+  @Selector .profile-content 个人信息内容区域
+*/
 .profile-content {
     display: flex;
     padding: 24px;
     align-items: flex-start;
 }
 
+/* 头像区域样式 */
+/* 
+  @Style_Desc 用户头像及更换头像按钮的容器样式
+  @Selector .avatar-section 头像区域容器
+*/
 .avatar-section {
     display: flex;
     flex-direction: column;
@@ -709,19 +1000,30 @@ export default {
     flex-shrink: 0;
 }
 
-
-
+/* 头像上传组件样式 */
+/* 
+  @Style_Desc 头像上传组件的边距和圆角
+  @Selector .avatar-uploader 头像上传组件
+*/
 .avatar-uploader {
     margin-top: 12px;
     border-radius: 8px;
 }
 
-
+/* 用户信息区域样式 */
+/* 
+  @Style_Desc 用户信息区域的弹性布局
+  @Selector .info-section 用户信息区域
+*/
 .info-section {
     flex: 1;
 }
 
-/* 网格布局优化 */
+/* 用户信息网格布局 */
+/* 
+  @Style_Desc 用户信息项的网格布局配置
+  @Selector .info-grid 信息项网格容器
+*/
 .info-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -729,6 +1031,11 @@ export default {
     /* 减小行间距和列间距 */
 }
 
+/* 信息项样式 */
+/* 
+  @Style_Desc 单个信息项的高度和对齐方式
+  @Selector .info-item 单个信息项容器
+*/
 .info-item {
     min-height: 32px;
     /* 减小高度 */
@@ -736,7 +1043,11 @@ export default {
     align-items: center;
 }
 
-
+/* 信息标签样式 */
+/* 
+  @Style_Desc 信息项标签的宽度和文字样式
+  @Selector .info-label 信息项标签
+*/
 .info-label {
     width: 80px;
     font-weight: 500;
@@ -744,25 +1055,43 @@ export default {
     font-size: 16px;
 }
 
+/* 信息值样式 */
+/* 
+  @Style_Desc 信息项值的文字样式
+  @Selector .info-value 信息项值
+*/
 .info-value {
     color: #303133;
     font-size: 16px;
 }
 
+/* 可编辑信息值样式 */
+/* 
+  @Style_Desc 可编辑信息值的布局，包含值和编辑按钮
+  @Selector .info-value-edit 可编辑信息值容器
+*/
 .info-value-edit {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-/* 操作按钮优化 */
+/* 操作按钮区域样式 */
+/* 
+  @Style_Desc 操作按钮区域的边距和布局
+  @Selector .action-buttons 操作按钮容器
+*/
 .action-buttons {
     margin-top: 24px;
     display: flex;
     gap: 12px;
 }
 
-/* 响应式布局 */
+/* 响应式布局样式 */
+/* 
+  @Style_Desc 小屏幕设备的响应式布局调整
+  @Selector @media (max-width: 768px) 媒体查询规则
+*/
 @media (max-width: 768px) {
     .profile-content {
         flex-direction: column;
@@ -784,6 +1113,10 @@ export default {
 
 /* ------------------ */
 /* 卡片样式优化 */
+/* 
+  @Style_Desc 卡片的基础样式重定义，包括边框、背景和过渡效果
+  @Selector .profile-card, .activity-card 信息卡片和活动卡片
+*/
 .profile-card,
 .activity-card {
     border-radius: 12px;
@@ -795,6 +1128,11 @@ export default {
     transition: all 0.3s ease;
 }
 
+/* 活动记录卡片特殊样式 */
+/* 
+  @Style_Desc 活动记录卡片的高度限制和过渡效果
+  @Selector .activity-card 活动记录卡片
+*/
 .activity-card {
     max-height: calc(99vh - 450px);
     overflow-y: hidden;
@@ -802,55 +1140,170 @@ export default {
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-
+/* 活动表格区域样式 */
+/* 
+  @Style_Desc 活动记录表格的内边距和高度控制
+  @Selector .activity-table 活动记录表格容器
+*/
 .activity-table {
     padding: 0 16px 16px;
     height: auto;
 }
 
-/* 活动记录表格优化 */
+/* 活动记录标签页样式 */
+/* 
+  @Style_Desc 活动记录标签页的上边距
+  @Selector .compact-tabs 紧凑型标签页
+*/
 .compact-tabs {
     margin-top: 12px;
 }
 
+/* 活动记录表格样式 */
+/* 
+  @Style_Desc 活动记录表格的边框、布局和滚动效果
+  @Selector .compact-table 紧凑型表格
+*/
 .compact-table {
     border-width: 2px;
     border-color: rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     flex-direction: column;
-    max-height: calc(99vh - 625px);
+    max-height: calc(99vh - 635px);
     overflow: auto;
     scrollbar-color: rgba(240, 249, 235, 0.4) transparent;
 }
 
+/* 表格伪元素移除 */
+/* 
+  @Style_Desc 移除表格默认的伪元素
+  @Selector .compact-table::before 表格伪元素
+*/
 .compact-table::before {
     display: none;
 }
 
+/* 查看他人主页提示区域样式 */
+/* 
+  @Style_Desc 查看他人主页提示的下边距
+  @Selector .viewing-notice 查看提示区域
+*/
 .viewing-notice {
     margin-bottom: 16px;
     /* 可选，调整间距 */
 }
 
+/* 提示标题内容样式 */
+/* 
+  @Style_Desc 提示标题内容的布局和对齐方式
+  @Selector .alert-title-content 提示标题内容容器
+*/
 .alert-title-content {
     display: flex;
     justify-content: space-between;
     align-items: center;
     width: 100%;
     padding-right: 10px;
-
 }
 
-/* 可选：调整按钮与文字的对齐方式 */
+/* 提示标题文字样式 */
+/* 
+  @Style_Desc 提示标题文字的右边距
+  @Selector .alert-title-content span 提示标题文字
+*/
 .alert-title-content span {
     margin-right: 10px;
-
     /* 确保文字和按钮之间有空隙 */
 }
 
-/* 设置el-card 子容器 el-alert 样式 */
+/* 提示组件背景样式 */
+/* 
+  @Style_Desc 提示组件的背景颜色
+  @Selector .el-card .el-alert 卡片内的提示组件
+*/
 .el-card .el-alert {
     background-color: rgba(240, 2, 2, 0.1);
 }
 
+/* 现代对话框样式 */
+.modern-dialog>>>.el-dialog {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.modern-dialog>>>.el-dialog__header {
+  background-color: #f5f7fa;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ebeef5;
+  position: relative;
+}
+
+.modern-dialog>>>.el-dialog__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.modern-dialog>>>.el-dialog__body {
+  padding: 24px 20px;
+}
+
+.modern-dialog>>>.el-dialog__footer {
+  padding: 14px 20px;
+  border-top: 1px solid #ebeef5;
+  background-color: #f9fafc;
+}
+
+/* 对话框关闭按钮样式 */
+.modern-dialog>>>.el-dialog__headerbtn {
+  transition: all 0.3s;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 28px;
+  padding: 5px;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn:hover {
+  background-color: rgba(245, 108, 108, 0.8);
+  border-radius: 4px;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn:hover .el-dialog__close {
+  color: #ffffff;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn .el-dialog__close {
+  transition: color 0.3s;
+  font-size: 18px;
+  transform: scale(1.2);
+}
+
+/* 美化表单样式 */
+.modern-dialog .el-input__inner,
+.modern-dialog .el-textarea__inner {
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.modern-dialog .el-input__inner:focus,
+.modern-dialog .el-textarea__inner:focus {
+  border-color: #409EFF;
+  box-shadow: 0 0 5px rgba(64, 158, 255, 0.2);
+}
+
+/* 美化按钮样式 */
+.modern-dialog .dialog-footer .el-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.modern-dialog .dialog-footer .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
 </style>
+```

@@ -42,11 +42,15 @@
                 <el-table-column prop="email" label="邮箱" width="200"></el-table-column>
                 <el-table-column prop="department" label="部门" width="150"></el-table-column>
                 <el-table-column prop="lastLogin" label="最后登录" width="180" sortable></el-table-column>
-                <el-table-column label="操作" width="240" fixed="right" align="center" header-align="center">
+                <el-table-column label="操作" width="300" fixed="right" align="center" header-align="center">
                     <template slot-scope="scope">
                         <el-button size="mini" type="primary" @click="editUser(scope.row)">编辑</el-button>
                         <el-button size="mini" type="danger" @click="deleteUser(scope.row.id)">删除</el-button>
                         <el-button size="mini" type="info" @click="viewUserProfile(scope.row)">主页</el-button>
+                        <el-button size="mini" type="warning" @click="authorizeWarehouse(scope.row)"
+                            class="authorize-button">
+                            <i class="el-icon-key"></i> 授权
+                        </el-button>
                     </template>
                 </el-table-column>
             </el-table>
@@ -62,7 +66,8 @@
         </el-card>
 
         <!-- 添加/编辑用户对话框 -->
-        <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="50%" center>
+        <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="50%" center
+                   class="modern-dialog" top="8vh">
             <el-form :model="currentUser" :rules="userRules" ref="userForm" label-width="80px">
                 <el-row :gutter="20">
                     <el-col :span="12">
@@ -124,6 +129,101 @@
                 <el-button type="primary" @click="saveUser">保存</el-button>
             </span>
         </el-dialog>
+        
+        <!-- 授权仓库管理对话框 - 全新现代高端设计 -->
+        <el-dialog title="授权仓库管理" :visible.sync="warehouseDialogVisible" width="70%" 
+                   class="modern-dialog authorization-dialog" top="5vh">
+            <div class="auth-header">
+                <div class="auth-user-info">
+                    <div class="auth-avatar">
+                        <i class="el-icon-user-solid"></i>
+                    </div>
+                    <div class="auth-details" v-if="currentAuthUser">
+                        <h3>{{ currentAuthUser.name }} <el-tag size="mini" :type="getRoleTagType(currentAuthUser.role)">
+                            {{ currentAuthUser.role === 'admin' ? '管理员' : 
+                               currentAuthUser.role === 'manager' ? '经理' : '操作员' }}
+                        </el-tag></h3>
+                        <p>正在设置仓库访问权限</p>
+                    </div>
+                </div>
+                <div class="auth-search">
+                    <el-autocomplete
+                        v-model="warehouseSearchQuery"
+                        :fetch-suggestions="queryWarehouse"
+                        placeholder="输入仓库ID搜索"
+                        clearable
+                        @select="scrollToWarehouse"
+                        class="warehouse-search">
+                        <template slot-scope="{ item }">
+                            <div class="warehouse-suggestion">
+                                <span class="suggestion-id">{{ item.value }}</span>
+                                <span class="suggestion-name">{{ item.label }}</span>
+                            </div>
+                        </template>
+                        <el-button slot="append" icon="el-icon-search" @click="handleWarehouseSearch"></el-button>
+                    </el-autocomplete>
+                </div>
+                <div class="auth-actions">
+                    <el-tooltip content="选择全部仓库" placement="top">
+                        <el-button type="primary" plain icon="el-icon-check" size="small" 
+                                   @click="selectAllWarehouses">全选</el-button>
+                    </el-tooltip>
+                    <el-tooltip content="取消所有选择" placement="top">
+                        <el-button type="info" plain icon="el-icon-close" size="small" 
+                                   @click="deselectAllWarehouses">清空</el-button>
+                    </el-tooltip>
+                </div>
+            </div>
+            
+            <div class="auth-content">
+                <el-table :data="warehouses" ref="warehouseTable" style="width: 100%" border stripe
+                    @selection-change="handleWarehouseSelectionChange"
+                    :header-cell-style="{ background: '#f5f7fa', color: '#606266' }"
+                    height="500px" 
+                    class="scrollable-table">
+                    <el-table-column type="selection" width="55"></el-table-column>
+                    <el-table-column prop="id" label="仓库ID" width="120"></el-table-column>
+                    <el-table-column prop="name" label="仓库名称">
+                        <template slot-scope="scope">
+                            <span class="warehouse-name">{{ scope.row.name }}</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column prop="location" label="仓库位置"></el-table-column>
+                    <el-table-column label="基本权限" width="100" align="center">
+                        <template slot-scope="scope">
+                            <el-switch v-model="scope.row.hasBasicPermission" 
+                                     @change="(value) => handleBasicPermissionChange(scope.row, value)"
+                                     active-color="#67C23A">
+                            </el-switch>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="越权批准" width="100" align="center">
+                        <template slot-scope="scope">
+                            <el-switch v-model="scope.row.hasOverridePermission"
+                                     :disabled="!scope.row.hasBasicPermission"
+                                     @change="(value) => handleOverridePermissionChange(scope.row, value)"
+                                     active-color="#E6A23C">
+                            </el-switch>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+            
+            <div class="auth-summary" v-if="currentAuthUser">
+                <div class="summary-icon"><i class="el-icon-info"></i></div>
+                <div class="summary-text">
+                    <p>已为 <strong>{{ currentAuthUser.name }}</strong> 授权 
+                       <span class="highlight-count">{{ getSelectedWarehouseCount() }}</span> 个仓库的访问权限
+                       和 <span class="highlight-count">{{ getSelectedOverrideCount() }}</span> 个仓库的越权批准权限。
+                    </p>
+                </div>
+            </div>
+            
+            <span slot="footer" class="dialog-footer">
+                <el-button @click="warehouseDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="saveWarehouseAuthorization">确认授权</el-button>
+            </span>
+        </el-dialog>
     </div>
 </template>
 
@@ -131,6 +231,11 @@
 export default {
     data() {
         return {
+            warehouseDialogVisible: false,
+            warehouses: [], // 所有仓库列表
+            selectedWarehouses: [], // 当前选中的仓库
+            selectedOverrideWarehouses: [], // 当前选中的越权批准仓库
+            currentAuthUser: null, // 当前正在设置授权的用户
             users: [],
             searchQuery: '',
             selectedField: '',
@@ -152,7 +257,10 @@ export default {
             },
             currentPage: 1,
             pageSize: 20,
-            loading: false
+            loading: false,
+            isInitializingWarehouses: false, // 添加初始化标志位
+            warehouseSearchQuery: '', // 添加仓库搜索相关数据
+            warehouseSearchTimeout: null
         };
     },
     computed: {
@@ -179,8 +287,40 @@ export default {
     created() {
         this.loadUsers();
         this.initAdminUser();
+        this.initWarehouses();
+
     },
     methods: {
+        /**
+         * @Function_Para 初始化仓库数据
+         *   无参数
+         * @Function_Meth 加载仓库数据为授权功能作准备
+         * @Function_Orgi 在组件created生命周期中自动调用
+         * @Function_API
+         *   - localStorage API: 读取仓库数据
+         */
+        initWarehouses() {
+            let warehouses = JSON.parse(localStorage.getItem('warehouses')) || [];
+            // 确保每个仓库都有唯一ID
+            if (warehouses.length === 0) {
+                // 初始化一些示例仓库数据，如果没有仓库数据
+                warehouses = [
+                    { id: 'wh001', name: '主仓库', location: '北京市朝阳区' },
+                    { id: 'wh002', name: '分仓A', location: '上海市浦东新区' },
+                    { id: 'wh003', name: '分仓B', location: '广州市天河区' }
+                ];
+                localStorage.setItem('warehouses', JSON.stringify(warehouses));
+            }
+        },
+
+        /**
+         * @Function_Para 查看用户主页
+         *   @param {Object} user - 要查看的用户对象
+         * @Function_Meth 跳转到指定用户的个人主页
+         * @Function_Orgi Template引用: 表格操作列的"主页"按钮点击事件
+         * @Function_API
+         *   - Vue Router: 导航到用户主页并传递参数
+         */
         viewUserProfile(user) {
             // 使用特殊路由参数跳转到用户主页
             this.$router.push({
@@ -188,10 +328,27 @@ export default {
                 query: { userId: user.id }
             });
         },
+
+        /**
+         * @Function_Para 加载用户数据
+         *   无参数
+         * @Function_Meth 从localStorage加载用户数据
+         * @Function_Orgi 在组件created生命周期中自动调用
+         * @Function_API
+         *   - localStorage API: 读取用户数据
+         */
         loadUsers() {
             this.users = JSON.parse(localStorage.getItem('users')) || [];
         },
 
+        /**
+         * @Function_Para 初始化管理员用户
+         *   无参数
+         * @Function_Meth 确保系统中存在默认的管理员账户
+         * @Function_Orgi 在组件created生命周期中自动调用
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         */
         initAdminUser() {
             const users = JSON.parse(localStorage.getItem('users')) || [];
             const adminExists = users.some(u => u.username === 'admin');
@@ -216,6 +373,13 @@ export default {
             }
         },
 
+        /**
+         * @Function_Para 获取默认用户对象
+         *   无参数
+         * @Function_Meth 返回初始化的用户对象模板
+         * @Function_Orgi 被showAddDialog方法调用，创建新用户时使用
+         * @Function_API 无外部API调用
+         */
         getDefaultUser() {
             return {
                 id: '',
@@ -226,10 +390,19 @@ export default {
                 email: '',
                 phone: '',
                 department: '',
-                status: 'active'
+                status: 'active',
+                authorizedWarehouses: [] // 新增字段
             };
         },
 
+        /**
+         * @Function_Para 显示添加用户对话框
+         *   无参数
+         * @Function_Meth 初始化新用户表单并显示添加对话框
+         * @Function_Orgi Template引用: "新增用户"按钮的点击事件
+         * @Function_API
+         *   - Vue nextTick: 等待DOM更新后清除验证
+         */
         showAddDialog() {
             this.currentUser = this.getDefaultUser();
             this.isEdit = false;
@@ -239,12 +412,31 @@ export default {
             });
         },
 
+        /**
+         * @Function_Para 编辑用户
+         *   @param {Object} user - 要编辑的用户对象
+         * @Function_Meth 准备编辑用户的表单数据并显示编辑对话框
+         * @Function_Orgi Template引用: 表格操作列的"编辑"按钮点击事件
+         * @Function_API 无外部API调用
+         */
         editUser(user) {
             this.currentUser = { ...user, password: '' };
             this.isEdit = true;
             this.dialogVisible = true;
         },
 
+        /**
+         * @Function_Para 保存用户
+         *   无参数
+         * @Function_Meth 验证并保存用户信息:
+         *   1. 验证表单数据
+         *   2. 根据操作类型（新增/编辑）更新用户数据
+         *   3. 保存到localStorage并刷新列表
+         * @Function_Orgi Template引用: 用户对话框的"保存"按钮点击事件
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         *   - Element UI Message: 显示操作结果
+         */
         saveUser() {
             this.$refs.userForm.validate(valid => {
                 if (valid) {
@@ -283,6 +475,16 @@ export default {
             });
         },
 
+        /**
+         * @Function_Para 删除用户
+         *   @param {string} userId - 要删除的用户ID
+         * @Function_Meth 确认并删除指定用户
+         * @Function_Orgi Template引用: 表格操作列的"删除"按钮点击事件
+         * @Function_API
+         *   - Element UI MessageBox: 显示确认对话框
+         *   - localStorage API: 读写用户数据
+         *   - Element UI Message: 显示操作结果
+         */
         deleteUser(userId) {
             this.$confirm('确定删除该用户吗？', '提示', {
                 type: 'warning'
@@ -295,6 +497,15 @@ export default {
             }).catch(() => { });
         },
 
+        /**
+         * @Function_Para 更新用户状态
+         *   @param {Object} user - 用户对象，包含更新后的状态
+         * @Function_Meth 更新用户的启用/禁用状态
+         * @Function_Orgi Template引用: 状态列的el-switch @change事件
+         * @Function_API
+         *   - localStorage API: 读写用户数据
+         *   - Element UI Message: 显示操作结果
+         */
         updateUserStatus(user) {
             let users = JSON.parse(localStorage.getItem('users')) || [];
             const index = users.findIndex(u => u.id === user.id);
@@ -305,33 +516,84 @@ export default {
             }
         },
 
+        /**
+         * @Function_Para 获取角色标签类型
+         *   @param {string} role - 用户角色
+         * @Function_Meth 根据用户角色返回对应的标签样式类型
+         * @Function_Orgi Template引用: 用户角色列的el-tag :type属性
+         * @Function_API 无外部API调用
+         */
         getRoleTagType(role) {
             return role === 'admin' ? 'danger' :
                 role === 'manager' ? 'warning' : 'success';
         },
 
+        /**
+         * @Function_Para 生成唯一ID
+         *   无参数
+         * @Function_Meth 生成基于时间戳和随机数的唯一标识符
+         * @Function_Orgi 被saveUser方法调用，创建新用户时使用
+         * @Function_API
+         *   - Date API: 获取当前时间戳
+         *   - Math.random: 生成随机数
+         */
         generateId() {
             return Date.now().toString(36) + Math.random().toString(36).substr(2);
         },
 
+        /**
+         * @Function_Para 密码哈希处理
+         *   @param {string} password - 原始密码
+         * @Function_Meth 执行简单的密码哈希处理
+         * @Function_Orgi 被saveUser和initAdminUser方法调用，处理密码时使用
+         * @Function_API 仅使用JavaScript字符串操作
+         */
         hashPassword(password) {
             // 简单示例哈希，实际项目应使用更安全的算法
             return password.split('').reverse().join('') + password.length;
         },
 
+        /**
+         * @Function_Para 处理搜索
+         *   无参数
+         * @Function_Meth 执行搜索并重置分页到第一页
+         * @Function_Orgi Template引用: 搜索框的@keyup.enter和搜索按钮的点击事件
+         * @Function_API 无外部API调用
+         */
         handleSearch() {
             this.currentPage = 1;
         },
 
+        /**
+         * @Function_Para 处理页大小变化
+         *   @param {number} size - 新的页大小
+         * @Function_Meth 更新每页显示记录数，并重置为第一页
+         * @Function_Orgi Template引用: 分页控件的@size-change事件
+         * @Function_API 无外部API调用
+         */
         handleSizeChange(size) {
             this.pageSize = size;
             this.currentPage = 1;
         },
 
+        /**
+         * @Function_Para 处理页码变化
+         *   @param {number} page - 新的页码
+         * @Function_Meth 更新当前页码
+         * @Function_Orgi Template引用: 分页控件的@current-change事件
+         * @Function_API 无外部API调用
+         */
         handleCurrentChange(page) {
             this.currentPage = page;
         },
 
+        /**
+         * @Function_Para 处理表格排序变化
+         *   @param {Object} params - 排序参数，包含prop和order
+         * @Function_Meth 根据排序字段和顺序对用户数据进行排序
+         * @Function_Orgi Template引用: 表格的@sort-change事件
+         * @Function_API 无外部API调用
+         */
         handleSortChange({ prop, order }) {
             if (order === 'ascending') {
                 this.users.sort((a, b) => (a[prop] > b[prop] ? 1 : -1));
@@ -340,6 +602,14 @@ export default {
             }
         },
 
+        /**
+         * @Function_Para 滚动表格到顶部
+         *   无参数
+         * @Function_Meth 平滑滚动表格视图到顶部
+         * @Function_Orgi Template引用: "返回顶部"按钮的点击事件
+         * @Function_API
+         *   - DOM API: 获取表格滚动容器并执行滚动
+         */
         scrollToTop() {
             const tableWrapper = this.$refs.table?.$el.querySelector('.el-table__body-wrapper');
             if (tableWrapper) {
@@ -348,6 +618,373 @@ export default {
                     behavior: 'smooth'
                 });
             }
+        },
+
+        /**
+         * @Function_Para 授权仓库管理
+         *   @param {Object} user - 要授权的用户对象
+         * @Function_Meth 打开仓库授权对话框，设置用户的仓库访问权限
+         * @Function_Orgi Template引用: 表格操作列的"授权"按钮点击事件
+         * @Function_API
+         *   - Element UI Notify: 显示权限不足通知
+         */
+        authorizeWarehouse(user) {
+            if (!this.isCurrentUserAdmin()) {
+                this.$notify({
+                    title: '权限不足',
+                    message: '只有管理员可以设置仓库授权',
+                    type: 'warning',
+                    iconClass: 'el-icon-warning-outline'
+                });
+                return;
+            }
+
+            this.currentAuthUser = user;
+            this.loadWarehouses();
+            this.warehouseDialogVisible = true;
+        },
+
+        /**
+         * @Function_Para 加载仓库列表
+         *   无参数
+         * @Function_Meth 加载所有仓库数据，并设置当前用户已授权的仓库选中状态
+         * @Function_Orgi 被authorizeWarehouse方法调用，打开授权对话框时使用
+         * @Function_API
+         *   - localStorage API: 读取仓库数据
+         *   - Element UI Table: 设置表格行选中状态
+         */
+        loadWarehouses() {
+            this.isInitializingWarehouses = true; // 设置初始化标志
+            
+            // 从localStorage获取仓库数据
+            const warehouses = JSON.parse(localStorage.getItem('warehouses')) || [];
+            const authorizedWarehouses = this.currentAuthUser.authorizedWarehouses || [];
+            const overrideApprovalWarehouses = this.currentAuthUser.overrideApprovalWarehouses || [];
+            
+            // 为每个仓库添加权限状态
+            this.warehouses = warehouses.map(warehouse => {
+                return {
+                    ...warehouse,
+                    hasBasicPermission: authorizedWarehouses.includes(warehouse.id),
+                    hasOverridePermission: overrideApprovalWarehouses.includes(warehouse.id)
+                };
+            });
+            
+            // 为管理员用户处理特殊情况
+            if (this.currentAuthUser.role === 'admin') {
+                this.warehouses = this.warehouses.map(warehouse => ({
+                    ...warehouse,
+                    hasBasicPermission: true,
+                    hasOverridePermission: true
+                }));
+            }
+            
+            // 等待DOM更新后设置表格选择状态
+            this.$nextTick(() => {
+                if (this.$refs.warehouseTable) {
+                    // 先清除所有选择
+                    this.$refs.warehouseTable.clearSelection();
+                    
+                    // 选择有基本权限的仓库
+                    this.warehouses.forEach(warehouse => {
+                        if (warehouse.hasBasicPermission) {
+                            this.$refs.warehouseTable.toggleRowSelection(warehouse, true);
+                        }
+                    });
+                    
+                    // 设置完成后解除初始化标志
+                    setTimeout(() => {
+                        this.isInitializingWarehouses = false;
+                    }, 100);
+                }
+            });
+        },
+
+        /**
+         * @Function_Para 处理基本权限变更
+         * @param {Object} row - 表格行对象
+         * @param {Boolean} value - 新的权限值
+         */
+        handleBasicPermissionChange(row, value) {
+            // 更新基本权限状态
+            row.hasBasicPermission = value;
+            
+            // 如果取消基本权限，同时取消越权批准权限
+            if (!value) {
+                row.hasOverridePermission = false;
+                
+                // 同步更新表格选择状态
+                if (this.$refs.warehouseTable) {
+                    this.$refs.warehouseTable.toggleRowSelection(row, false);
+                }
+            } else {
+                // 添加基本权限时，选中该行
+                if (this.$refs.warehouseTable) {
+                    this.$refs.warehouseTable.toggleRowSelection(row, true);
+                }
+            }
+        },
+
+        /**
+         * @Function_Para 处理越权批准权限变更
+         * @param {Object} row - 表格行对象
+         * @param {Boolean} value - 新的权限值
+         */
+        handleOverridePermissionChange(row, value) {
+            // 仅更新越权批准权限状态，不影响表格选择和基本权限
+            row.hasOverridePermission = value;
+        },
+
+        /**
+         * @Function_Para 处理仓库选择变化
+         */
+        handleWarehouseSelectionChange(selection) {
+            // 如果在初始化过程中，不处理选择变化事件
+            if (this.isInitializingWarehouses) return;
+            
+            // 存储选中的仓库
+            this.selectedWarehouses = selection;
+            
+            // 获取选中仓库的ID列表
+            const selectedIds = selection.map(item => item.id);
+            
+            // 更新所有仓库的基本权限状态（保留越权批准权限状态）
+            this.warehouses.forEach(warehouse => {
+                const isSelected = selectedIds.includes(warehouse.id);
+                
+                // 仅当选择状态与当前基本权限状态不一致时更新
+                if (warehouse.hasBasicPermission !== isSelected) {
+                    warehouse.hasBasicPermission = isSelected;
+                    
+                    // 如果取消选择，同时取消越权批准权限
+                    if (!isSelected) {
+                        warehouse.hasOverridePermission = false;
+                    }
+                }
+            });
+        },
+
+        /**
+         * @Function_Para 保存授权设置
+         */
+        saveWarehouseAuthorization() {
+            const users = JSON.parse(localStorage.getItem('users')) || [];
+            const userIndex = users.findIndex(u => u.id === this.currentAuthUser.id);
+
+            if (userIndex !== -1) {
+                // 获取基本权限和越权批准权限的仓库ID列表
+                const basicPermissionIds = this.warehouses
+                    .filter(w => w.hasBasicPermission)
+                    .map(w => w.id);
+                    
+                const overridePermissionIds = this.warehouses
+                    .filter(w => w.hasOverridePermission)
+                    .map(w => w.id);
+                
+                // 管理员始终拥有所有权限
+                if (this.currentAuthUser.role === 'admin') {
+                    const allWarehouseIds = this.warehouses.map(w => w.id);
+                    users[userIndex].authorizedWarehouses = allWarehouseIds;
+                    users[userIndex].overrideApprovalWarehouses = allWarehouseIds;
+                } else {
+                    // 更新用户权限
+                    users[userIndex].authorizedWarehouses = basicPermissionIds;
+                    users[userIndex].overrideApprovalWarehouses = overridePermissionIds;
+                }
+                
+                // 保存到localStorage
+                localStorage.setItem('users', JSON.stringify(users));
+                
+                // 更新当前授权用户对象
+                this.currentAuthUser = users[userIndex];
+
+                this.$notify({
+                    title: '授权成功',
+                    message: `${this.currentAuthUser.name}的仓库授权已更新`,
+                    type: 'success',
+                    position: 'top-right'
+                });
+
+                this.loadUsers(); // 刷新用户列表
+                this.warehouseDialogVisible = false;
+            }
+        },
+
+        /**
+         * @Function_Para 检查当前用户是否是管理员
+         *   无参数
+         * @Function_Meth 验证当前登录用户是否具有管理员角色
+         * @Function_Orgi 被authorizeWarehouse方法调用，验证权限时使用
+         * @Function_API
+         *   - localStorage API: 读取当前用户数据
+         */
+        isCurrentUserAdmin() {
+            const currentUser = JSON.parse(localStorage.getItem('user'));
+            return currentUser && currentUser.role === 'admin';
+        },
+
+        /**
+         * @Function_Para 检查是否是管理员用户
+         * @Function_Meth 判断当前授权的用户是否是管理员
+         */
+        isAdminUser() {
+            return this.currentAuthUser && this.currentAuthUser.role === 'admin';
+        },
+        
+        /**
+         * @Function_Para 全选仓库
+         * @Function_Meth 选择所有仓库并设置权限
+         */
+        selectAllWarehouses() {
+            this.warehouses.forEach(warehouse => {
+                warehouse.hasBasicPermission = true;
+                if (this.currentAuthUser.role === 'admin' || this.currentAuthUser.role === 'manager') {
+                    warehouse.hasOverridePermission = true;
+                }
+            });
+            
+            // 更新表格选择状态
+            this.$nextTick(() => {
+                this.$refs.warehouseTable.clearSelection();
+                this.warehouses.forEach(row => {
+                    this.$refs.warehouseTable.toggleRowSelection(row, true);
+                });
+            });
+        },
+        
+        /**
+         * @Function_Para 取消选择所有仓库
+         * @Function_Meth 清除所有仓库的权限设置
+         */
+        deselectAllWarehouses() {
+            this.warehouses.forEach(warehouse => {
+                warehouse.hasBasicPermission = false;
+                warehouse.hasOverridePermission = false;
+            });
+            
+            // 更新表格选择状态
+            this.$nextTick(() => {
+                this.$refs.warehouseTable.clearSelection();
+            });
+        },
+        
+        /**
+         * @Function_Para 获取已选择仓库数量
+         * @returns {number} 选择的仓库数量
+         */
+        getSelectedWarehouseCount() {
+            return this.warehouses.filter(w => w.hasBasicPermission).length;
+        },
+        
+        /**
+         * @Function_Para 获取已选择越权批准仓库数量
+         * @returns {number} 选择的越权批准仓库数量
+         */
+        getSelectedOverrideCount() {
+            return this.warehouses.filter(w => w.hasOverridePermission).length;
+        },
+
+        /**
+         * @Function_Para 搜索仓库
+         * @param {string} queryString - 搜索关键字
+         * @param {Function} callback - 回调函数，用于返回结果
+         * @Function_Meth 根据输入ID查询匹配仓库
+         */
+        queryWarehouse(queryString, callback) {
+            if (!queryString) {
+                callback([]);
+                return;
+            }
+
+            const query = queryString.toLowerCase();
+            const results = this.warehouses
+                .filter(warehouse => {
+                    return warehouse.id.toLowerCase().includes(query) || 
+                           warehouse.name.toLowerCase().includes(query);
+                })
+                .sort((a, b) => {
+                    const aIdStartsWith = a.id.toLowerCase().startsWith(query);
+                    const bIdStartsWith = b.id.toLowerCase().startsWith(query);
+                    if (aIdStartsWith && !bIdStartsWith) return -1;
+                    if (!aIdStartsWith && bIdStartsWith) return 1;
+                    return 0;
+                })
+                .map(warehouse => ({
+                    value: warehouse.id,
+                    label: warehouse.name,
+                    data: warehouse
+                }));
+
+            callback(results);
+        },
+
+        /**
+         * @Function_Para 处理仓库搜索
+         * @Function_Meth 执行搜索并滚动到匹配的仓库
+         */
+        handleWarehouseSearch() {
+            if (!this.warehouseSearchQuery) return;
+            
+            const warehouse = this.warehouses.find(
+                w => w.id.toLowerCase() === this.warehouseSearchQuery.toLowerCase()
+            );
+            
+            if (warehouse) {
+                this.scrollToWarehouse({ data: warehouse });
+            } else {
+                this.$message.warning('未找到匹配的仓库');
+            }
+        },
+
+        /**
+         * @Function_Para 滚动到指定仓库
+         * @param {Object} item - 包含仓库数据的对象
+         * @Function_Meth 平滑滚动到表格中的指定仓库行
+         */
+        scrollToWarehouse(item) {
+            const warehouse = item.data;
+            if (!warehouse) return;
+            
+            this.$nextTick(() => {
+                // 找到对应仓库的索引
+                const index = this.warehouses.findIndex(w => w.id === warehouse.id);
+                if (index === -1) return;
+                
+                // 获取表格和行元素
+                const tableBody = this.$refs.warehouseTable.$el.querySelector('.el-table__body-wrapper');
+                const rows = tableBody.querySelectorAll('tr.el-table__row');
+                
+                if (index < rows.length && tableBody) {
+                    // 获取行元素的位置，并平滑滚动
+                    const rowEl = rows[index];
+                    const offsetTop = rowEl.offsetTop;
+                    
+                    tableBody.scrollTo({
+                        top: offsetTop - 60, // 向上偏移一点，更容易看到
+                        behavior: 'smooth'
+                    });
+                    
+                    // 添加高亮效果
+                    this.highlightRow(rows[index]);
+                }
+            });
+        },
+        
+        /**
+         * @Function_Para 高亮显示行
+         * @param {HTMLElement} row - 要高亮的表格行元素
+         * @Function_Meth 临时添加高亮样式，并在一段时间后移除
+         */
+        highlightRow(row) {
+            if (!row) return;
+            
+            // 添加高亮类
+            row.classList.add('row-highlight');
+            
+            // 3秒后移除高亮效果
+            setTimeout(() => {
+                row.classList.remove('row-highlight');
+            }, 3000);
         }
     }
 };
@@ -355,12 +992,15 @@ export default {
 
 <style scoped>
 /* 主容器样式 */
+/* 设置用户管理页面的基本内边距 */
+/* 应用于整个组件的最外层div，class="user" */
 .user {
     padding: 8px;
-    border-radius: 20% !important;
 }
 
 /* 搜索区域样式 */
+/* 设置顶部搜索卡片的背景、圆角和间距 */
+/* 应用于搜索区域的el-card组件，class="search-card" */
 .search-card {
     padding: 8px;
     border-radius: 8px;
@@ -368,7 +1008,9 @@ export default {
     background-color: rgb(245, 245, 250);
 }
 
-/* 搜索框组样式 - 包含选择框、输入框和操作按钮 */
+/* 搜索框组样式 */
+/* 使用Flexbox布局组织搜索组件的水平排列和间距 */
+/* 应用于包含搜索控件的容器div，class="search-group" */
 .search-group {
     display: flex;
     align-items: center;
@@ -376,22 +1018,33 @@ export default {
     /* 元素间距 */
 }
 
+/* 字段选择框样式 */
+/* 设置字段下拉选择框的固定宽度 */
+/* 应用于搜索字段选择的el-select组件，class="field-select" */
 .field-select {
     width: 150px;
     /* 字段选择框固定宽度 */
 }
 
+/* 搜索框样式 */
+/* 设置搜索输入框占据剩余空间 */
+/* 应用于搜索输入的el-input组件，class="search-box" */
 .search-box {
     flex: 1;
     /* 搜索框占据剩余空间 */
 }
 
+/* 操作按钮样式 */
+/* 确保按钮文字不会换行 */
+/* 应用于"新增用户"按钮的el-button组件，class="action-button" */
 .action-button {
     white-space: nowrap;
     /* 按钮文字不换行 */
 }
 
 /* 表格容器样式 */
+/* 设置表格容器的背景、边距和圆角 */
+/* 应用于包含表格的el-card组件，class="table-card" */
 .table-card {
     padding: 8px;
     padding-bottom: 0px;
@@ -400,7 +1053,9 @@ export default {
     background-color: rgb(245, 245, 250);
 }
 
-/* 表格头部样式 - 包含标题和统计标签 */
+/* 表格头部样式 */
+/* 设置表格标题区域的布局、背景和圆角 */
+/* 应用于表格上方的标题区域div，class="table-header" */
 .table-header {
     padding: 16px;
     background: rgb(250, 250, 250);
@@ -410,12 +1065,17 @@ export default {
     border-radius: 8px 8px 0 0;
 }
 
+/* 表格标题文本样式 */
+/* 设置表格标题的字体大小和粗细 */
+/* 应用于表格标题文本span，class="table-title" */
 .table-title {
     font-size: 18px;
     font-weight: bold;
 }
 
 /* 表格主体样式 */
+/* 设置表格的高度、边框和圆角 */
+/* 应用于用户列表的el-table组件 */
 .el-table {
     width: 100%;
     flex: 1;
@@ -424,7 +1084,9 @@ export default {
     border-radius: 0px 0px 8px 8px;
 }
 
-/* 表格底部样式 - 包含分页和返回顶部按钮 */
+/* 表格底部样式 */
+/* 设置表格底部分页和按钮区域的布局 */
+/* 应用于表格底部的控制区域div，class="table-footer" */
 .table-footer {
     display: flex;
     justify-content: space-between;
@@ -434,6 +1096,8 @@ export default {
 }
 
 /* 返回顶部按钮样式 */
+/* 设置返回顶部按钮的外观和过渡效果 */
+/* 应用于"返回顶部"按钮的el-button组件，class="back-to-top" */
 .back-to-top {
     padding: 7px 12px;
     border-radius: 4px;
@@ -444,33 +1108,283 @@ export default {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* 返回顶部按钮悬停效果 */
+/* 设置返回顶部按钮鼠标悬停时的边框颜色和上移动画 */
+/* 应用于"返回顶部"按钮的悬停状态 */
 .back-to-top:hover {
     border-color: #409EFF;
     transform: translateY(-2px);
 }
 
-/* 分页样式调整 */
+/* 分页控件样式 */
+/* 重置分页控件的边距 */
+/* 应用于分页控件的el-pagination组件，class="pagination" */
 .pagination {
     margin: 0;
     padding: 0;
 }
 
-/* 固定列特殊样式处理 */
+/* 固定列样式 */
+/* 调整固定在右侧的操作列的高度和圆角 */
+/* 应用于表格的固定右侧列容器 */
 .el-table__fixed-right {
     height: calc(100% - 2px) !important;
     border-radius: 0 8px 0 0;
 }
 
+/* 固定列边框移除 */
+/* 移除固定列底部的边框线 */
+/* 应用于固定列的伪元素 */
 .el-table__fixed-right::before {
     background-color: transparent !important;
 }
 
-/* 表格列可调整宽度样式 */
+/* 表格列标题样式 */
+/* 设置表格列标题单元格的定位 */
+/* 应用于表格列标题th元素 */
 .el-table .el-table__header-wrapper th {
     position: relative;
 }
 
+/* 表格列标题内容样式 */
+/* 设置表格列标题的文本不换行 */
+/* 应用于表格列标题内的cell元素 */
 .el-table .el-table__header-wrapper th .cell {
     white-space: nowrap;
+}
+
+/* 授权按钮样式 */
+/* 设置授权按钮的左侧边距 */
+/* 应用于仓库授权的el-button组件，class="authorize-button" */
+.authorize-button {
+    margin-left: 10px;
+}
+
+/* 现代对话框样式 */
+.modern-dialog>>>.el-dialog {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.modern-dialog>>>.el-dialog__header {
+  background-color: #f5f7fa;
+  padding: 16px 20px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.modern-dialog>>>.el-dialog__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.modern-dialog>>>.el-dialog__body {
+  padding: 24px 20px;
+}
+
+.modern-dialog>>>.el-dialog__footer {
+  padding: 14px 20px;
+  border-top: 1px solid #ebeef5;
+  background-color: #f9fafc;
+}
+
+/* 对话框关闭按钮样式 */
+.modern-dialog>>>.el-dialog__headerbtn {
+  transition: all 0.3s;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 28px;
+  padding: 5px;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn:hover {
+  background-color: rgba(245, 108, 108, 0.8);
+  border-radius: 4px;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn:hover .el-dialog__close {
+  color: #ffffff;
+}
+
+.modern-dialog>>>.el-dialog__headerbtn .el-dialog__close {
+  transition: color 0.3s;
+  font-size: 18px;
+  transform: scale(1.2);
+}
+
+/* 美化表单样式 */
+.modern-dialog .el-input__inner,
+.modern-dialog .el-textarea__inner {
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.modern-dialog .el-input__inner:focus,
+.modern-dialog .el-textarea__inner:focus {
+  border-color: #409EFF;
+  box-shadow: 0 0 5px rgba(64, 158, 255, 0.2);
+}
+
+/* 美化按钮样式 */
+.modern-dialog .dialog-footer .el-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  transition: all 0.3s;
+}
+
+.modern-dialog .dialog-footer .el-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* 授权对话框特别样式 */
+.authorization-dialog>>>.el-dialog__body {
+  padding: 0;
+}
+
+.auth-header {
+  display: flex;
+  flex-wrap: wrap; /* 允许在小屏幕上换行 */
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #eef2f6 100%);
+  border-bottom: 1px solid #ebeef5;
+  gap: 15px; /* 各元素间距 */
+}
+
+.auth-user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+  min-width: 200px;
+}
+
+/* 添加搜索框样式 */
+.auth-search {
+  flex: 2;
+  max-width: 300px;
+}
+
+.warehouse-search {
+  width: 100%;
+}
+
+/* 搜索建议样式 */
+.warehouse-suggestion {
+  display: flex;
+  align-items: center;
+  height: 34px;
+}
+
+.suggestion-id {
+  font-weight: bold;
+  margin-right: 8px;
+  color: #409EFF;
+}
+
+.suggestion-name {
+  font-size: 13px;
+  color: #606266;
+}
+
+.auth-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.auth-content {
+  padding: 20px;
+  height: 500px; /* 添加固定高度 */
+}
+
+.warehouse-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.auth-summary {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px 20px;
+  background-color: #f0f9eb;
+  border-top: 1px solid #e1f3d8;
+}
+
+.summary-icon {
+  font-size: 24px;
+  color: #67c23a;
+}
+
+.summary-text {
+  flex: 1;
+}
+
+.summary-text p {
+  margin: 0;
+  color: #606266;
+}
+
+.highlight-count {
+  font-weight: bold;
+  color: #409EFF;
+}
+
+/* 表格内的开关样式 */
+.auth-content .el-switch {
+  margin: 0 auto;
+}
+
+/* 美化表格样式 */
+.authorization-dialog>>>.el-table th {
+  background-color: #f5f7fa;
+  color: #606266;
+  font-weight: 600;
+}
+
+.authorization-dialog>>>.el-table--border, 
+.authorization-dialog>>>.el-table--group {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #ebeef5;
+}
+
+.authorization-dialog>>>.el-table--border::after, 
+.authorization-dialog>>>.el-table--group::after {
+  display: none;
+}
+
+/* 添加可滚动表格样式 */
+.scrollable-table {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* 高亮效果 */
+.authorization-dialog >>>.row-highlight {
+  background-color: rgba(64, 158, 255, 0.2) !important;
+  transition: background-color 0.5s ease;
+}
+
+/* 响应式调整 */
+@media (max-width: 900px) {
+  .auth-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .auth-search, .auth-actions {
+    width: 100%;
+    max-width: none;
+    margin-top: 10px;
+  }
+}
+.el-button--small {
+  padding: 12px 20px;
 }
 </style>

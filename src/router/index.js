@@ -21,16 +21,23 @@ const routes = [
       {
         path: 'list/warehouses',
         component: () => import('../views/Warehouse.vue'),
-        meta: { roles: ['admin', 'manager'] }
+        meta: { roles: ['admin', 'manager', 'operator'] } // 添加 operator 权限
       },
       {
         path: 'list/warehouse-products',
-        component: () => import('../views/warehouse-products.vue'),
+        component: () => import('../views/Warehouse-products.vue'),
         meta: { roles: ['admin', 'manager', 'operator'] }
       },
+      // 将原本的operation路由修改为warehouse/operation
       {
-        path: 'operation',
-        component: () => import('../views/operation.vue'),
+        path: 'warehouse/operation',
+        component: () => import('../views/Operation.vue'),
+        meta: { roles: ['admin', 'manager', 'operator'] }
+      },
+      // 添加新的越权申请页面路由
+      {
+        path: 'warehouse/override',
+        component: () => import('../views/OverrideOperation.vue'),
         meta: { roles: ['admin', 'manager', 'operator'] }
       },
       {
@@ -69,10 +76,27 @@ function getDefaultRouteForUser(user) {
     case 'manager':
       return '/list/warehouses';
     case 'operator':
-      return '/operation';
+      return '/warehouse/operation'; // 修改默认路由为新的路径
     default:
       return '/list/products';
   }
+}
+
+// 添加检查用户仓库权限的函数
+function checkWarehousePermissions(to, user) {
+  // 管理员和经理有默认路由
+  if (user.role === 'admin' || user.role === 'manager') {
+    return true;
+  }
+
+  // 对于操作员，检查是否有任何授权的仓库
+  const authorizedWarehouses = user.authorizedWarehouses || [];
+  if (authorizedWarehouses.length === 0) {
+    // 没有任何授权仓库的操作员只能访问个人主页
+    return to.path === '/system/profile';
+  }
+
+  return true;
 }
 
 router.beforeEach((to, from, next) => {
@@ -98,6 +122,12 @@ router.beforeEach((to, from, next) => {
     if (!to.meta.roles.includes(user.role)) {
       const defaultRoute = getDefaultRouteForUser(user);
       next({ path: defaultRoute, replace: true });
+      return;
+    }
+    
+    // 添加仓库权限检查
+    if (!checkWarehousePermissions(to, user)) {
+      next({ path: '/system/profile', replace: true });
       return;
     }
   }
